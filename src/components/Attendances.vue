@@ -19,13 +19,13 @@
             <div class="grid grid-flow-col sm:auto-cols-max justify-start sm:justify-end gap-2">
               <!-- Dropdown -->
               <CoursePicker :options="courses" :selected="currentCourse"/>
-              <Datepicker v-model="date" :format="format"/>                       
+              <Datepicker v-model="date" :format="format" />                       
             </div>
 
           </div>
 
           <!-- Table -->
-          <StudentsTable @change-selection="updateSelectedItems($event)" />
+          <StudentsTable :students="students" @checkIsPresent="checkIsPresent" :attendances="attendances"/>
 
         </div>
       </main>
@@ -39,6 +39,7 @@
 import { ref, watch, reactive, onMounted, onBeforeMount } from 'vue'
 import StudentsTable from './StudentsTable.vue'
 import CoursePicker from './CoursePicker.vue'
+import moment from 'moment';
 
 import Datepicker from '@vuepic/vue-datepicker'
 
@@ -56,6 +57,7 @@ export default {
     const date = ref(new Date())
     const students = ref(null)
     const courses = ref([])
+    const attendances = ref([])
 
     const currentCourse = ref(null)
     const format = (date) => {
@@ -79,16 +81,12 @@ export default {
           currentCourse.value = data.data[0]
         }
 
-        console.log(currentCourse.value)
-
         courses.value = data.data
       }).catch(error => console.log(error))
-
-      return data
     }
 
-    const getCourseStudents = function () {
-      return fetch(baseUrl.value + '/courses/' + currentCourse.value.id + '/students', {
+    const updateCourseStudents = async () => {
+      const data = await fetch(baseUrl.value + '/courses/' + currentCourse.value.id + '/students', {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -96,23 +94,80 @@ export default {
       })
       .then(response => response.json())
       .then(data => {
-        return data.data
+        students.value = data.data
+      }).catch(error => console.log(error))
+    }
+
+    const getAttendances = async () => {
+      const data = await fetch(baseUrl.value + '/courses/' + currentCourse.value.id + '/attendances?date=' + moment(date.value).format('YYYY-MM-DD') , {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        }
       })
+      .then(response => response.json())
+      .then(data => {
+        var attTemp = []
+
+        data.data.forEach((att, key) => {
+          attTemp[att.student_id] = att.is_present
+        })
+
+        attendances.value = attTemp
+
+      }).catch(error => console.log(error))
+    }
+
+    const saveAttendance = async (studentId, isPresent) => {
+      const data = await fetch(baseUrl.value + '/courses/' + currentCourse.value.id + '/attendances', 
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          student_id: studentId,
+          is_present: isPresent,
+          date: date.value,
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        getAttendances()
+      }).catch(error => console.log(error))
     }
 
     onMounted(() => {
       updateCourses()
     })
 
-    // watch(currentCourse, (newValue, oldValue) => {
-    //   //getCourseStudents().then(variable => console.log(variable))
-    // })
+    watch(currentCourse, (newValue, oldValue) => {
+      updateCourseStudents()
+      getAttendances()
+    }, {
+      inmediate: true,
+    })
+
+    watch(date, (newValue, oldValue) => {
+      updateCourseStudents()
+      getAttendances()
+    }, {
+      inmediate: true,
+    })
+
+    const checkIsPresent = (studentId, isPresent) => {
+      saveAttendance(studentId, isPresent)
+    }
 
     return { 
       courses,
       currentCourse,
       date,
       format,
+      students,
+      checkIsPresent,
+      attendances,
     }  
   }
 }
